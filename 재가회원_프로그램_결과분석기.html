@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>재가회원 프로그램 결과분석기</title>
+<!--
+  재가회원 프로그램 결과분석기
+  - 프로그램 정보와 참여자별 사전·사후 점수를 입력하면 평균·변화량·변화율·개인별 결과를 자동 계산합니다.
+  - 파일 하나로 동작합니다. 외부 라이브러리·AI 호출·서버·로그인·DB 없음. 입력은 이 브라우저에만 남습니다.
+-->
+<style>
+  :root{
+    --navy:#1F3A5F;
+    --accent:#2B6CB0;
+    --bg:#F6F8FB; --line:#D9E0E8; --soft:#EEF2F7; --ink:#1D2430; --mute:#5F6B7A;
+    --input-bg:#FFF9DB;
+    --warn:#B00020; --warnbg:#FDEBEC;
+    --ok:#1B7A43; --okbg:#EAF7EE;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.55}
+  header{background:var(--navy);color:#fff;padding:18px 20px}
+  header h1{margin:0;font-size:21px}
+  header p{margin:4px 0 0;font-size:13px;opacity:.9}
+  main{max-width:1180px;margin:0 auto;padding:16px 20px 60px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+  .card h2{margin:0 0 4px;font-size:17px;color:var(--navy)}
+  .card .desc{margin:0 0 14px;font-size:13px;color:var(--mute)}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px}
+  .grid.g3{grid-template-columns:repeat(3,1fr)}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field.span2{grid-column:span 2}
+  .field label{font-size:13px;color:var(--mute);font-weight:bold}
+  .field label .req{color:var(--warn);margin-left:2px}
+  input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:15px;font-family:inherit;background:#fff;color:var(--ink)}
+  input[type=number],input[type=date],input.score{background:var(--input-bg)}
+  textarea{resize:vertical;min-height:52px}
+  .hint{font-size:12px;color:var(--mute)}
+  .err{font-size:12px;color:var(--warn);display:none;margin-top:2px}
+  .field.invalid input,.field.invalid select,.field.invalid textarea{border-color:var(--warn);background:#FFF3F3}
+  .field.invalid .err{display:block}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  thead th{background:var(--soft);color:var(--navy);font-size:12px;text-align:center;padding:8px 6px;border-bottom:2px solid var(--line);white-space:nowrap}
+  tbody td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:center;vertical-align:middle}
+  tbody tr:hover{background:#FAFCFE}
+  td input,td select{padding:6px 8px;font-size:14px;text-align:center}
+  td input.name{text-align:left}
+  td input.note{text-align:left}
+  .tbl-wrap{overflow-x:auto}
+  .rowbad td{background:var(--warnbg)}
+  .flagtext{font-size:12px;color:var(--warn)}
+
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  button{padding:9px 14px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit;color:var(--ink)}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.ghost{background:#fff}
+  button.del{padding:5px 8px;color:var(--warn);border:none;background:none;font-size:15px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+
+  .banner{border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:10px}
+  .banner.warn{background:var(--warnbg);color:var(--warn);border:1px solid #F3C4C8}
+  .banner.info{background:var(--soft);color:var(--mute);border:1px solid var(--line)}
+
+  .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+  .stat{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center;position:relative}
+  .stat .lbl{font-size:12px;color:var(--mute)}
+  .stat .val{font-size:24px;font-weight:bold;color:var(--navy);margin-top:4px}
+  .stat .copybtn{position:absolute;top:8px;right:8px;font-size:11px;padding:3px 8px}
+
+  .cmp-table td,.cmp-table th{text-align:center}
+  .cmp-table .big{font-size:18px;font-weight:bold;color:var(--navy)}
+
+  .judge-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:10px}
+  .judge{border-radius:10px;padding:12px;text-align:center;border:1px solid var(--line)}
+  .judge.up{background:var(--okbg);color:var(--ok)}
+  .judge.flat{background:var(--soft);color:var(--mute)}
+  .judge.down{background:var(--warnbg);color:var(--warn)}
+  .judge .n{font-size:22px;font-weight:bold}
+  .judge .l{font-size:12px}
+
+  textarea.summary{min-height:170px;font-size:14px;background:var(--soft)}
+  .copy-inline{font-size:11px;padding:3px 8px;margin-left:6px}
+  .section-title{display:flex;justify-content:space-between;align-items:center}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:50}
+  .toast.on{opacity:1}
+  footer{max-width:1180px;margin:0 auto;padding:0 20px 40px;font-size:12px;color:var(--mute)}
+
+  @media(max-width:820px){
+    .grid,.grid.g3{grid-template-columns:1fr}
+    .field.span2{grid-column:span 1}
+    .stat-row,.judge-row{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>재가회원 프로그램 결과분석기</h1>
+  <p>참여 인원과 사전·사후 척도 점수를 입력하면 평균·변화량·변화율과 참여자별 결과를 자동으로 계산합니다.</p>
+</header>
+
+<main>
+
+  <!-- 1. 프로그램 기본 정보 -->
+  <section class="card">
+    <h2>1. 프로그램 기본 정보</h2>
+    <p class="desc">프로그램명, 분석기간, 참여인원, 척도 정보를 입력하세요.</p>
+    <div class="grid">
+      <div class="field" id="f-title">
+        <label>프로그램명<span class="req">*</span></label>
+        <input id="progTitle" type="text" placeholder="예: 약물증상교육">
+        <div class="err">프로그램명을 입력하세요.</div>
+      </div>
+      <div class="field" id="f-count">
+        <label>참여인원(신고)<span class="req">*</span></label>
+        <input id="progCount" type="number" min="0" placeholder="예: 20">
+        <div class="err">참여인원을 숫자로 입력하세요.</div>
+      </div>
+      <div class="field" id="f-start">
+        <label>분석기간 시작<span class="req">*</span></label>
+        <input id="periodStart" type="date">
+        <div class="err">시작일을 입력하세요.</div>
+      </div>
+      <div class="field" id="f-end">
+        <label>분석기간 종료<span class="req">*</span></label>
+        <input id="periodEnd" type="date">
+        <div class="err">종료일을 입력하세요.</div>
+      </div>
+      <div class="field" id="f-scale">
+        <label>척도명<span class="req">*</span></label>
+        <input id="scaleName" type="text" placeholder="예: 우울척도(GDS)">
+        <div class="err">척도명을 입력하세요.</div>
+      </div>
+      <div class="field">
+        <label>점수 방향</label>
+        <select id="scoreDir">
+          <option value="">설정 안 함(단순 변화량만 표시)</option>
+          <option value="up">점수가 높을수록 긍정적</option>
+          <option value="down">점수가 낮을수록 긍정적</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>척도 최소점수</label>
+        <input id="scaleMin" type="number" placeholder="선택 입력">
+      </div>
+      <div class="field">
+        <label>척도 최대점수</label>
+        <input id="scaleMax" type="number" placeholder="선택 입력">
+      </div>
+      <div class="field span2">
+        <label>결과 해석 기준</label>
+        <textarea id="interpRule" placeholder="예: 점수가 5점 이상 낮아지면 유의미한 개선으로 본다 (선택 입력)"></textarea>
+      </div>
+      <div class="field span2" id="f-note">
+        <label>특이사항<span class="req">*</span></label>
+        <textarea id="progNote" placeholder="예: 결측값 발생, 중도 탈락자 있음 등"></textarea>
+        <div class="err">특이사항을 입력하세요. 없으면 "특이사항 없음"이라고 적으세요.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. 참여자별 점수 입력 -->
+  <section class="card">
+    <div class="section-title">
+      <h2>2. 참여자별 사전·사후 점수</h2>
+    </div>
+    <p class="desc">이름은 선택 입력입니다. 점수가 없으면 비워두면 결측으로 자동 처리됩니다.</p>
+    <div id="rangeBanner"></div>
+    <div class="tbl-wrap">
+      <table id="ptable">
+        <thead>
+          <tr>
+            <th style="width:36px">#</th>
+            <th style="width:120px">이름/식별자</th>
+            <th style="width:90px">참여여부</th>
+            <th style="width:90px">사전점수</th>
+            <th style="width:90px">사후점수</th>
+            <th style="width:80px">변화량</th>
+            <th style="width:100px">판정</th>
+            <th>비고</th>
+            <th style="width:36px"></th>
+          </tr>
+        </thead>
+        <tbody id="ptbody"></tbody>
+      </table>
+    </div>
+    <div class="bar">
+      <button id="btnAddRow">+ 행 추가</button>
+      <button id="btnGenRows">참여인원 수만큼 행 생성</button>
+      <button id="btnClearRows" class="ghost">전체 행 삭제</button>
+    </div>
+  </section>
+
+  <!-- 3. 분석 결과 -->
+  <section class="card">
+    <h2>3. 분석 결과</h2>
+    <div id="missingBanner"></div>
+
+    <div class="stat-row">
+      <div class="stat">
+        <button class="copybtn" data-copy="statTarget">복사</button>
+        <div class="lbl">분석 대상 인원</div>
+        <div class="val" id="statTarget">-</div>
+      </div>
+      <div class="stat">
+        <button class="copybtn" data-copy="statActual">복사</button>
+        <div class="lbl">실제 분석 인원</div>
+        <div class="val" id="statActual">-</div>
+      </div>
+      <div class="stat">
+        <button class="copybtn" data-copy="statMissing">복사</button>
+        <div class="lbl">결측 인원</div>
+        <div class="val" id="statMissing">-</div>
+      </div>
+    </div>
+
+    <div class="tbl-wrap">
+      <table class="cmp-table">
+        <thead>
+          <tr><th>사전 평균 점수</th><th>사후 평균 점수</th><th>평균 변화량</th><th>평균 변화율</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="big" id="cmpPre">-</td>
+            <td class="big" id="cmpPost">-</td>
+            <td class="big" id="cmpDelta">-</td>
+            <td class="big" id="cmpRate">-</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="calcBanner"></div>
+
+    <div class="judge-row">
+      <div class="judge up">
+        <div class="n" id="judgeUp">-</div>
+        <div class="l">향상 인원</div>
+      </div>
+      <div class="judge flat">
+        <div class="n" id="judgeFlat">-</div>
+        <div class="l">변화 없음 인원</div>
+      </div>
+      <div class="judge down">
+        <div class="n" id="judgeDown">-</div>
+        <div class="l">감소 인원 (화면 표시 전용, 보고서 복사에는 포함되지 않음)</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. 개인별 변화 결과 -->
+  <section class="card">
+    <h2>4. 개인별 변화 결과</h2>
+    <p class="desc">내부 확인용 표입니다. 결과보고서에는 요약 수치를 사용하세요.</p>
+    <div class="tbl-wrap">
+      <table id="rtable">
+        <thead>
+          <tr><th>#</th><th>이름/식별자</th><th>사전</th><th>사후</th><th>변화량</th><th>판정</th><th>비고</th></tr>
+        </thead>
+        <tbody id="rtbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5. 결과 요약 및 내보내기 -->
+  <section class="card">
+    <h2>5. 결과 요약 및 내보내기</h2>
+    <p class="desc">아래 요약문을 복사해 한글 문서에 붙여넣거나 TXT/MD 파일로 내려받을 수 있습니다.</p>
+    <textarea id="summaryText" class="summary" readonly></textarea>
+    <div class="bar">
+      <button id="btnCopySummary" class="primary">결과 요약 복사</button>
+      <button id="btnDownloadTxt">TXT 다운로드</button>
+      <button id="btnDownloadMd">MD 다운로드</button>
+    </div>
+  </section>
+
+</main>
+<footer>
+  이 도구는 입력한 값만으로 계산하며, 입력하지 않은 사실은 만들어 내지 않습니다. 모든 계산은 화면에서 즉시 다시 계산됩니다. 이 브라우저 안에서만 동작하며 입력값은 외부로 전송되지 않습니다.
+</footer>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var ptbody = document.getElementById('ptbody');
+  var rtbody = document.getElementById('rtbody');
+  var rowSeq = 0;
+
+  function el(tag, attrs, html){
+    var e = document.createElement(tag);
+    if(attrs) for(var k in attrs) e.setAttribute(k, attrs[k]);
+    if(html !== undefined) e.innerHTML = html;
+    return e;
+  }
+
+  function addRow(name){
+    rowSeq++;
+    var tr = el('tr', {'data-id': rowSeq});
+    tr.innerHTML =
+      '<td class="idx"></td>'+
+      '<td><input class="name" type="text" placeholder="선택" value="'+(name?escapeHtml(name):'')+'"></td>'+
+      '<td><select class="status"><option value="참여">참여</option><option value="미참여">미참여</option></select></td>'+
+      '<td><input class="score pre" type="number" placeholder="사전"></td>'+
+      '<td><input class="score post" type="number" placeholder="사후"></td>'+
+      '<td class="delta">-</td>'+
+      '<td class="judge">-</td>'+
+      '<td><input class="note" type="text" placeholder="예: 결측, 범위오류 등"></td>'+
+      '<td><button class="del" title="행 삭제">&times;</button></td>';
+    ptbody.appendChild(tr);
+    reindex();
+    return tr;
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function reindex(){
+    var rows = ptbody.querySelectorAll('tr');
+    rows.forEach(function(tr, i){
+      tr.querySelector('.idx').textContent = (i+1);
+    });
+  }
+
+  // 초기 행 5개
+  for(var i=0;i<5;i++) addRow('');
+
+  document.getElementById('btnAddRow').addEventListener('click', function(){
+    addRow('');
+    recompute();
+  });
+
+  document.getElementById('btnGenRows').addEventListener('click', function(){
+    var n = parseInt(document.getElementById('progCount').value, 10);
+    if(!n || n <= 0){
+      showToast('참여인원을 먼저 숫자로 입력하세요.');
+      return;
+    }
+    if(ptbody.children.length > 0){
+      var ok = confirm('현재 입력된 행('+ptbody.children.length+'개)을 지우고 '+n+'개 행을 새로 만들까요?');
+      if(!ok) return;
+    }
+    ptbody.innerHTML = '';
+    for(var i=0;i<n;i++) addRow('');
+    recompute();
+  });
+
+  document.getElementById('btnClearRows').addEventListener('click', function(){
+    var ok = confirm('입력된 참여자 행을 모두 삭제할까요?');
+    if(!ok) return;
+    ptbody.innerHTML = '';
+    recompute();
+  });
+
+  ptbody.addEventListener('click', function(e){
+    if(e.target.classList.contains('del')){
+      var tr = e.target.closest('tr');
+      tr.parentNode.removeChild(tr);
+      reindex();
+      recompute();
+    }
+  });
+
+  ptbody.addEventListener('input', recompute);
+  ptbody.addEventListener('change', recompute);
+
+  var topFields = ['progTitle','progCount','periodStart','periodEnd','scaleName','scoreDir','scaleMin','scaleMax','interpRule','progNote'];
+  topFields.forEach(function(id){
+    document.getElementById(id).addEventListener('input', recompute);
+    document.getElementById(id).addEventListener('change', recompute);
+  });
+
+  function validateField(fieldId, ok){
+    var f = document.getElementById(fieldId);
+    if(!f) return;
+    if(ok) f.classList.remove('invalid'); else f.classList.add('invalid');
+  }
+
+  function fmt(n, digits){
+    if(n === null || n === undefined || isNaN(n)) return '-';
+    digits = (digits === undefined) ? 2 : digits;
+    var r = Math.round(n * Math.pow(10,digits)) / Math.pow(10,digits);
+    return String(r);
+  }
+
+  function parseScore(raw, min, max){
+    // returns {value, error} error: null | 'range'
+    if(raw === '' || raw === null || raw === undefined) return {value:null, error:null};
+    var v = parseFloat(raw);
+    if(isNaN(v)) return {value:null, error:null};
+    if(min !== null && v < min) return {value:v, error:'range'};
+    if(max !== null && v > max) return {value:v, error:'range'};
+    return {value:v, error:null};
+  }
+
+  function recompute(){
+    // ---- 필수값 검사 (막지는 않고 경고만 표시) ----
+    var title = document.getElementById('progTitle').value.trim();
+    var count = document.getElementById('progCount').value;
+    var start = document.getElementById('periodStart').value;
+    var end = document.getElementById('periodEnd').value;
+    var scaleName = document.getElementById('scaleName').value.trim();
+    var note = document.getElementById('progNote').value.trim();
+
+    validateField('f-title', title !== '');
+    validateField('f-count', count !== '' && !isNaN(parseFloat(count)));
+    validateField('f-start', start !== '');
+    validateField('f-end', end !== '');
+    validateField('f-scale', scaleName !== '');
+    validateField('f-note', note !== '');
+
+    var scaleMinRaw = document.getElementById('scaleMin').value;
+    var scaleMaxRaw = document.getElementById('scaleMax').value;
+    var scaleMin = scaleMinRaw === '' ? null : parseFloat(scaleMinRaw);
+    var scaleMax = scaleMaxRaw === '' ? null : parseFloat(scaleMaxRaw);
+    var dir = document.getElementById('scoreDir').value; // '', 'up', 'down'
+
+    var rangeIssues = [];
+
+    var rows = Array.prototype.slice.call(ptbody.querySelectorAll('tr'));
+    var target = []; // 참여 상태인 행만
+
+    rows.forEach(function(tr, i){
+      var status = tr.querySelector('.status').value;
+      var preRaw = tr.querySelector('.pre').value;
+      var postRaw = tr.querySelector('.post').value;
+      var name = tr.querySelector('.name').value.trim() || ('참여자 '+(i+1));
+
+      var preP = parseScore(preRaw, scaleMin, scaleMax);
+      var postP = parseScore(postRaw, scaleMin, scaleMax);
+
+      tr.querySelector('.pre').style.borderColor = preP.error ? 'var(--warn)' : '';
+      tr.querySelector('.post').style.borderColor = postP.error ? 'var(--warn)' : '';
+
+      if(preP.error) rangeIssues.push(name+'의 사전점수('+preP.value+')');
+      if(postP.error) rangeIssues.push(name+'의 사후점수('+postP.value+')');
+
+      var effPre = preP.error ? null : preP.value; // 범위 오류는 결측과 동일 취급
+      var effPost = postP.error ? null : postP.value;
+
+      var delta = (effPre !== null && effPost !== null) ? (effPost - effPre) : null;
+
+      var judge = '-';
+      if(delta !== null){
+        if(dir === ''){
+          judge = '판단 보류';
+        } else if(delta === 0){
+          judge = '변화 없음';
+        } else if(dir === 'up'){
+          judge = delta > 0 ? '향상' : '감소';
+        } else if(dir === 'down'){
+          judge = delta < 0 ? '향상' : '감소';
+        }
+      } else {
+        judge = (status === '미참여') ? '미참여' : '결측';
+      }
+
+      var remark = [];
+      if(status === '미참여') remark.push('미참여');
+      if(preP.error) remark.push('사전 범위오류');
+      if(postP.error) remark.push('사후 범위오류');
+      if(status !== '미참여' && delta === null && !preP.error && !postP.error) remark.push('결측');
+
+      tr.querySelector('.delta').textContent = (delta === null) ? '-' : fmt(delta);
+      tr.querySelector('.judge').textContent = judge;
+      tr.classList.toggle('rowbad', preP.error || postP.error);
+
+      if(status !== '미참여'){
+        target.push({
+          name: name, effPre: effPre, effPost: effPost, delta: delta, judge: judge, remark: remark.join(', ')
+        });
+      }
+    });
+
+    // 범위 오류 안내 배너
+    var rangeBanner = document.getElementById('rangeBanner');
+    if(rangeIssues.length > 0){
+      rangeBanner.innerHTML = '<div class="banner warn">범위를 벗어난 점수가 있습니다: '+rangeIssues.join(', ')+
+        '. 척도 최소·최대점수를 확인하거나 해당 점수를 수정하세요. 이 값은 분석에서 결측으로 처리됩니다.</div>';
+    } else {
+      rangeBanner.innerHTML = '';
+    }
+
+    // ---- 집계 ----
+    var targetCount = target.length;
+    var actualCount = target.filter(function(p){ return p.effPre !== null && p.effPost !== null; }).length;
+    var missingCount = targetCount - actualCount;
+
+    var preList = target.filter(function(p){ return p.effPre !== null; }).map(function(p){ return p.effPre; });
+    var postList = target.filter(function(p){ return p.effPost !== null; }).map(function(p){ return p.effPost; });
+
+    var preAvg = preList.length ? preList.reduce(function(a,b){return a+b;},0)/preList.length : null;
+    var postAvg = postList.length ? postList.reduce(function(a,b){return a+b;},0)/postList.length : null;
+
+    var delta = (preAvg !== null && postAvg !== null) ? (postAvg - preAvg) : null;
+    var rate = null, rateNote = '';
+    if(delta !== null){
+      if(preAvg === 0){
+        rateNote = '사전 평균이 0이라 변화율을 계산할 수 없습니다.';
+      } else {
+        rate = (delta / preAvg) * 100;
+      }
+    }
+
+    var calcBanner = document.getElementById('calcBanner');
+    if(targetCount === 0){
+      calcBanner.innerHTML = '<div class="banner info">참여자로 등록된 행이 없습니다. 참여자 정보를 입력하세요.</div>';
+    } else if(preAvg === null || postAvg === null){
+      calcBanner.innerHTML = '<div class="banner info">분석 가능한 자료가 없습니다. 사전·사후 점수를 입력하세요.</div>';
+    } else if(rateNote){
+      calcBanner.innerHTML = '<div class="banner warn">'+rateNote+'</div>';
+    } else if(dir === ''){
+      calcBanner.innerHTML = '<div class="banner info">점수 방향이 설정되지 않아 향상·감소 판단 없이 단순 변화량만 표시합니다.</div>';
+    } else if(!scaleName){
+      calcBanner.innerHTML = '<div class="banner info">척도명이 입력되지 않아 기본 평균·변화량만 제공되며 해석은 제한됩니다.</div>';
+    } else {
+      calcBanner.innerHTML = '';
+    }
+
+    // 판정 집계 (점수 방향 있을 때만 의미 있음)
+    var upN = 0, flatN = 0, downN = 0, pendingN = 0;
+    target.forEach(function(p){
+      if(p.delta === null) return;
+      if(p.judge === '향상') upN++;
+      else if(p.judge === '변화 없음') flatN++;
+      else if(p.judge === '감소') downN++;
+      else if(p.judge === '판단 보류') pendingN++;
+    });
+
+    // ---- 화면 반영 ----
+    document.getElementById('statTarget').textContent = targetCount + '명';
+    document.getElementById('statActual').textContent = actualCount + '명';
+    document.getElementById('statMissing').textContent = missingCount + '명';
+
+    var missingBanner = document.getElementById('missingBanner');
+    missingBanner.innerHTML = (missingCount > 0)
+      ? '<div class="banner info">결측 인원 '+missingCount+'명은 사전 또는 사후 점수 중 하나가 없어 개인 변화량 계산과 실제 분석에서 제외되었습니다. 결측 사유는 특이사항에 기록하세요.</div>'
+      : '';
+
+    document.getElementById('cmpPre').textContent = preAvg === null ? '-' : fmt(preAvg);
+    document.getElementById('cmpPost').textContent = postAvg === null ? '-' : fmt(postAvg);
+    document.getElementById('cmpDelta').textContent = delta === null ? '-' : fmt(delta);
+    document.getElementById('cmpRate').textContent = (rate === null) ? (rateNote ? '계산 불가' : '-') : (fmt(rate,1)+'%');
+
+    if(dir === ''){
+      document.getElementById('judgeUp').textContent = '-';
+      document.getElementById('judgeFlat').textContent = '-';
+      document.getElementById('judgeDown').textContent = '-';
+    } else {
+      document.getElementById('judgeUp').textContent = upN + '명';
+      document.getElementById('judgeFlat').textContent = flatN + '명';
+      document.getElementById('judgeDown').textContent = downN + '명';
+    }
+
+    // 개인별 변화 결과 표
+    rtbody.innerHTML = '';
+    target.forEach(function(p, i){
+      var tr = el('tr', {});
+      tr.innerHTML = '<td>'+(i+1)+'</td>'+
+        '<td style="text-align:left">'+escapeHtml(p.name)+'</td>'+
+        '<td>'+(p.effPre===null?'-':fmt(p.effPre))+'</td>'+
+        '<td>'+(p.effPost===null?'-':fmt(p.effPost))+'</td>'+
+        '<td>'+(p.delta===null?'-':fmt(p.delta))+'</td>'+
+        '<td>'+escapeHtml(p.judge)+'</td>'+
+        '<td style="text-align:left">'+escapeHtml(p.remark)+'</td>';
+      rtbody.appendChild(tr);
+    });
+
+    // ---- 요약문 생성 ----
+    var lines = [];
+    lines.push('■ 프로그램 결과분석 요약');
+    lines.push('프로그램명: ' + (title || '(미입력)'));
+    lines.push('분석기간: ' + (start || '(미입력)') + ' ~ ' + (end || '(미입력)'));
+    lines.push('척도명: ' + (scaleName || '(미입력)'));
+    lines.push('');
+    lines.push('분석 대상 인원: ' + targetCount + '명');
+    lines.push('실제 분석 인원: ' + actualCount + '명');
+    lines.push('결측 인원: ' + missingCount + '명');
+    lines.push('');
+    lines.push('사전 평균 점수: ' + (preAvg===null?'-':fmt(preAvg)));
+    lines.push('사후 평균 점수: ' + (postAvg===null?'-':fmt(postAvg)));
+    lines.push('평균 변화량: ' + (delta===null?'-':fmt(delta)));
+    lines.push('평균 변화율: ' + (rate===null?(rateNote?'계산 불가':'-'):(fmt(rate,1)+'%')));
+    if(dir !== ''){
+      lines.push('');
+      lines.push('향상 인원: ' + upN + '명');
+      lines.push('변화 없음 인원: ' + flatN + '명');
+    }
+    if(rangeIssues.length){
+      lines.push('');
+      lines.push('※ 범위를 벗어난 점수가 있어 결측으로 처리했습니다: ' + rangeIssues.join(', '));
+    }
+    if(document.getElementById('interpRule').value.trim()){
+      lines.push('');
+      lines.push('결과 해석 기준: ' + document.getElementById('interpRule').value.trim());
+    }
+    lines.push('');
+    lines.push('특이사항: ' + (note || '(미입력)'));
+
+    document.getElementById('summaryText').value = lines.join('\n');
+  }
+
+  // ---- 복사 ----
+  function copyText(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){
+        showToast('복사되었습니다.');
+      }, function(){
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
+  }
+
+  function fallbackCopy(text){
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try{
+      document.execCommand('copy');
+      showToast('복사되었습니다.');
+    }catch(e){
+      showToast('복사에 실패했습니다. 직접 선택해 복사하세요.');
+    }
+    document.body.removeChild(ta);
+  }
+
+  var toastTimer = null;
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('on');
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('on'); }, 1600);
+  }
+
+  document.querySelectorAll('.copybtn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var id = btn.getAttribute('data-copy');
+      var text = document.getElementById(id).textContent;
+      copyText(text);
+    });
+  });
+
+  document.getElementById('btnCopySummary').addEventListener('click', function(){
+    copyText(document.getElementById('summaryText').value);
+  });
+
+  function download(filename, text){
+    var blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  document.getElementById('btnDownloadTxt').addEventListener('click', function(){
+    var title = document.getElementById('progTitle').value.trim() || '재가회원_프로그램_결과분석';
+    download(title + '_결과분석.txt', document.getElementById('summaryText').value);
+  });
+
+  document.getElementById('btnDownloadMd').addEventListener('click', function(){
+    var title = document.getElementById('progTitle').value.trim() || '재가회원_프로그램_결과분석';
+    var text = document.getElementById('summaryText').value;
+    var md = '# ' + title + ' 결과분석\n\n```\n' + text + '\n```\n';
+    download(title + '_결과분석.md', md);
+  });
+
+  recompute();
+})();
+</script>
+</body>
+</html>
